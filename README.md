@@ -40,6 +40,6 @@ Follow GNOME Shell logs:
 scripts/logs.sh
 ```
 
-The default overlay toggle shortcut is `Ctrl+Alt+A`.
+The default overlay toggle shortcut is `Ctrl+Alt+A`. The current visual prototype is a translucent amber 8x8 desktop grid. It is intentionally simple and exists to prove the compositor overlay path before the ASCII renderer is added.
 
 On Wayland, GNOME Shell usually needs a logout/login after installing a new extension for the first time. Existing extension code can often be refreshed by disabling/enabling the extension, but some GNOME Shell changes still require a new session.
