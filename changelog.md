@@ -46,6 +46,13 @@ This project is not intended to modify AcerolaFX directly. AcerolaFX is kept as 
   - `b83de42 Initial desktop ASCII overlay baseline`
 - Attempted to push `main` to GitHub over HTTPS, but the non-interactive shell could not prompt for GitHub credentials.
 - Tested SSH authentication to GitHub; GitHub's host key was accepted, but no authorized SSH key is currently available on this machine.
+- Generated a GitHub SSH key for this machine:
+  - private key: `/home/wifiknight/.ssh/id_ed25519_github_ascii_desktop`
+  - public key: `/home/wifiknight/.ssh/id_ed25519_github_ascii_desktop.pub`
+- Added SSH configuration so `github.com` uses the new project key.
+- Switched `origin` from HTTPS to SSH:
+  - `git@github.com:knightsky-cpu/ascii-desktop.git`
+- Verified SSH authentication succeeds for GitHub as `knightsky-cpu`.
 
 ## Initial Implementation Plan
 
@@ -68,4 +75,4 @@ This project is not intended to modify AcerolaFX directly. AcerolaFX is kept as 
 
 ## Git Status Note
 
-Git has been initialized locally and linked to the GitHub repository at `https://github.com/knightsky-cpu/ascii-desktop.git`. The local branch is `main`. The initial baseline commit exists locally, but pushing to GitHub is blocked until HTTPS credentials, GitHub CLI authentication, or an authorized SSH key is configured.
+Git has been initialized locally and linked to the GitHub repository at `git@github.com:knightsky-cpu/ascii-desktop.git`. The local branch is `main`. SSH authentication is configured and ready for pushing.
