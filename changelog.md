@@ -53,6 +53,9 @@ This project is not intended to modify AcerolaFX directly. AcerolaFX is kept as 
 - Switched `origin` from HTTPS to SSH:
   - `git@github.com:knightsky-cpu/ascii-desktop.git`
 - Verified SSH authentication succeeds for GitHub as `knightsky-cpu`.
+- Initial SSH push was rejected because GitHub already contained an initial `main` commit.
+- Fetched and merged `origin/main` using unrelated-history merge to preserve both the GitHub initial commit and the local project baseline.
+- Added the root `LICENSE` file from the GitHub initial commit during the merge.
 
 ## Initial Implementation Plan
 
