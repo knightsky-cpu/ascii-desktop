@@ -40,7 +40,7 @@ Follow GNOME Shell logs:
 scripts/logs.sh
 ```
 
-The default overlay toggle shortcut is `Ctrl+Alt+A`. The current visual prototype is a translucent amber 8x8 desktop grid. It is intentionally simple and exists to prove the compositor overlay path before the ASCII renderer is added.
+The default overlay toggle shortcut is `Ctrl+Alt+A`. The current visual prototype is a procedural amber ASCII-cell renderer using the density ramp ` .:coPO?@#`. It uses deterministic test luminance for now, not live desktop sampling yet.
 
 Cycle prototype grid presets while the overlay is active:
 

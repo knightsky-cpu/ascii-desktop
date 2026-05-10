@@ -1,3 +1,4 @@
+import Cairo from 'gi://cairo';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
@@ -8,21 +9,22 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 const TOGGLE_SHORTCUT = 'toggle-shortcut';
 const MIN_CELL_SIZE = 4;
 const CYCLE_PRESET_SHORTCUT = 'cycle-preset-shortcut';
+const ASCII_RAMP = ' .:coPO?@#';
 const GRID_PRESETS = [
     {
-        name: 'default',
+        name: 'fine-ascii',
         cellSize: 8,
         backgroundOpacity: 0.28,
         amberIntensity: 1.0,
     },
     {
-        name: 'medium',
+        name: 'medium-ascii',
         cellSize: 16,
         backgroundOpacity: 0.4,
         amberIntensity: 1.6,
     },
     {
-        name: 'large-strong',
+        name: 'large-strong-ascii',
         cellSize: 32,
         backgroundOpacity: 0.65,
         amberIntensity: 3.0,
@@ -107,10 +109,9 @@ export default class AsciiOverlayExtension extends Extension {
             reactive: false,
             can_focus: false,
         });
-        this._overlayRepaintId = this._overlay.connect(
-            'repaint',
-            () => this._drawGridPrototype()
-        );
+        this._overlayRepaintId = this._overlay.connect('repaint', () => {
+            this._drawAsciiPrototype();
+        });
 
         Main.uiGroup.add_child(this._overlay);
         this._syncOverlayGeometry();
@@ -161,7 +162,7 @@ export default class AsciiOverlayExtension extends Extension {
         );
     }
 
-    _drawGridPrototype() {
+    _drawAsciiPrototype() {
         if (!this._overlay)
             return;
 
@@ -181,17 +182,18 @@ export default class AsciiOverlayExtension extends Extension {
 
         for (let y = 0; y < height; y += cellSize) {
             for (let x = 0; x < width; x += cellSize) {
-                const checker = ((x / cellSize) + (y / cellSize)) % 2 === 0;
-                const alpha = (checker ? 0.15 : 0.07) * amberIntensity;
+                const luminance = this._samplePrototypeLuminance(x, y, width, height, cellSize);
+                const glyphIndex = Math.min(
+                    ASCII_RAMP.length - 1,
+                    Math.floor(luminance * ASCII_RAMP.length)
+                );
 
-                cr.setSourceRGBA(1.0, 0.52, 0.08, alpha);
-                cr.rectangle(x, y, cellSize, cellSize);
-                cr.fill();
+                this._drawAsciiGlyph(cr, ASCII_RAMP[glyphIndex], x, y, cellSize, amberIntensity);
             }
         }
 
         cr.setLineWidth(1);
-        cr.setSourceRGBA(1.0, 0.7, 0.22, 0.18 * amberIntensity);
+        cr.setSourceRGBA(1.0, 0.7, 0.22, 0.06 * amberIntensity);
 
         for (let x = 0.5; x < width; x += cellSize) {
             cr.moveTo(x, 0);
@@ -204,11 +206,36 @@ export default class AsciiOverlayExtension extends Extension {
         }
 
         cr.stroke();
-
-        cr.setSourceRGBA(1.0, 0.82, 0.25, Math.min(1.0, 0.22 * amberIntensity));
-        cr.rectangle(0, 0, Math.min(width, cellSize * 8), Math.min(height, cellSize * 2));
-        cr.fill();
-
         cr.$dispose();
+    }
+
+    _samplePrototypeLuminance(x, y, width, height, cellSize) {
+        const gradient = (x / Math.max(1, width) * 0.65) + (y / Math.max(1, height) * 0.35);
+        const cellX = Math.floor(x / cellSize);
+        const cellY = Math.floor(y / cellSize);
+        const wave = (Math.sin(cellX * 0.55) + Math.cos(cellY * 0.4)) * 0.12;
+        const checker = ((cellX + cellY) % 2) * 0.08;
+
+        return Math.max(0.0, Math.min(0.999, gradient + wave + checker));
+    }
+
+    _drawAsciiGlyph(cr, glyph, x, y, size, amberIntensity) {
+        if (glyph === ' ')
+            return;
+
+        const fontSize = size * 0.95;
+
+        cr.save();
+        cr.selectFontFace('monospace', Cairo.FontSlant.NORMAL, Cairo.FontWeight.NORMAL);
+        cr.setFontSize(fontSize);
+        cr.setSourceRGBA(1.0, 0.62, 0.12, Math.min(1.0, 0.55 * amberIntensity));
+
+        const extents = cr.textExtents(glyph);
+        const textX = x + (size - extents.width) / 2 - extents.xBearing;
+        const textY = y + (size - extents.height) / 2 - extents.yBearing;
+
+        cr.moveTo(textX, textY);
+        cr.showText(glyph);
+        cr.restore();
     }
 }
