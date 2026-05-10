@@ -16,18 +16,21 @@ const GRID_PRESETS = [
         cellSize: 8,
         backgroundOpacity: 0.28,
         amberIntensity: 1.0,
+        fontScale: 0.92,
     },
     {
         name: 'medium-ascii',
         cellSize: 16,
         backgroundOpacity: 0.4,
         amberIntensity: 1.6,
+        fontScale: 0.9,
     },
     {
         name: 'large-strong-ascii',
         cellSize: 32,
         backgroundOpacity: 0.65,
         amberIntensity: 3.0,
+        fontScale: 0.86,
     },
 ];
 
@@ -158,7 +161,8 @@ export default class AsciiOverlayExtension extends Extension {
             `${this.metadata.uuid}: ${reason} preset=${preset.name} ` +
             `cell-size=${preset.cellSize} ` +
             `background-opacity=${preset.backgroundOpacity} ` +
-            `amber-intensity=${preset.amberIntensity}`
+            `amber-intensity=${preset.amberIntensity} ` +
+            `font-scale=${preset.fontScale}`
         );
     }
 
@@ -175,10 +179,13 @@ export default class AsciiOverlayExtension extends Extension {
         );
         const backgroundOpacity = preset.backgroundOpacity;
         const amberIntensity = preset.amberIntensity;
+        const fontScale = preset.fontScale;
 
         cr.setSourceRGBA(0.06, 0.015, 0.0, backgroundOpacity);
         cr.rectangle(0, 0, width, height);
         cr.fill();
+
+        this._drawCellGuides(cr, width, height, cellSize, amberIntensity);
 
         for (let y = 0; y < height; y += cellSize) {
             for (let x = 0; x < width; x += cellSize) {
@@ -188,12 +195,24 @@ export default class AsciiOverlayExtension extends Extension {
                     Math.floor(luminance * ASCII_RAMP.length)
                 );
 
-                this._drawAsciiGlyph(cr, ASCII_RAMP[glyphIndex], x, y, cellSize, amberIntensity);
+                this._drawAsciiGlyph(
+                    cr,
+                    ASCII_RAMP[glyphIndex],
+                    x,
+                    y,
+                    cellSize,
+                    amberIntensity,
+                    fontScale
+                );
             }
         }
 
+        cr.$dispose();
+    }
+
+    _drawCellGuides(cr, width, height, cellSize, amberIntensity) {
         cr.setLineWidth(1);
-        cr.setSourceRGBA(1.0, 0.7, 0.22, 0.06 * amberIntensity);
+        cr.setSourceRGBA(1.0, 0.7, 0.22, 0.025 * amberIntensity);
 
         for (let x = 0.5; x < width; x += cellSize) {
             cr.moveTo(x, 0);
@@ -206,7 +225,6 @@ export default class AsciiOverlayExtension extends Extension {
         }
 
         cr.stroke();
-        cr.$dispose();
     }
 
     _samplePrototypeLuminance(x, y, width, height, cellSize) {
@@ -219,20 +237,20 @@ export default class AsciiOverlayExtension extends Extension {
         return Math.max(0.0, Math.min(0.999, gradient + wave + checker));
     }
 
-    _drawAsciiGlyph(cr, glyph, x, y, size, amberIntensity) {
+    _drawAsciiGlyph(cr, glyph, x, y, size, amberIntensity, fontScale) {
         if (glyph === ' ')
             return;
 
-        const fontSize = size * 0.95;
+        const fontSize = size * fontScale;
 
         cr.save();
         cr.selectFontFace('monospace', Cairo.FontSlant.NORMAL, Cairo.FontWeight.NORMAL);
         cr.setFontSize(fontSize);
-        cr.setSourceRGBA(1.0, 0.62, 0.12, Math.min(1.0, 0.55 * amberIntensity));
+        cr.setSourceRGBA(1.0, 0.64, 0.14, Math.min(1.0, 0.68 * amberIntensity));
 
         const extents = cr.textExtents(glyph);
         const textX = x + (size - extents.width) / 2 - extents.xBearing;
-        const textY = y + (size - extents.height) / 2 - extents.yBearing;
+        const textY = y + (size - extents.height) / 2 - extents.yBearing - (size * 0.03);
 
         cr.moveTo(textX, textY);
         cr.showText(glyph);
