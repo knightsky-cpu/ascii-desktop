@@ -6,10 +6,33 @@
       <summary>Toggle ASCII overlay shortcut</summary>
       <description>Keyboard shortcut used to toggle the desktop ASCII overlay.</description>
     </key>
+    <key name="cycle-preset-shortcut" type="as">
+      <default><![CDATA[['<Ctrl><Alt>period']]]></default>
+      <summary>Cycle grid preset shortcut</summary>
+      <description>Keyboard shortcut used to cycle the prototype grid preset.</description>
+    </key>
     <key name="overlay-enabled" type="b">
       <default>false</default>
       <summary>Overlay enabled state</summary>
       <description>Whether the ASCII overlay should be active.</description>
+    </key>
+    <key name="cell-size" type="i">
+      <default>8</default>
+      <range min="4" max="64"/>
+      <summary>Grid cell size</summary>
+      <description>Prototype grid cell size in screen pixels.</description>
+    </key>
+    <key name="background-opacity" type="d">
+      <default>0.28</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Background opacity</summary>
+      <description>Opacity of the dark background wash behind the prototype grid.</description>
+    </key>
+    <key name="amber-intensity" type="d">
+      <default>1.0</default>
+      <range min="0.0" max="3.0"/>
+      <summary>Amber grid intensity</summary>
+      <description>Intensity multiplier for the amber prototype grid and cell highlights.</description>
     </key>
   </schema>
 </schemalist>

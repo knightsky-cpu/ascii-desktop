@@ -6,13 +6,35 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const TOGGLE_SHORTCUT = 'toggle-shortcut';
-const CELL_SIZE = 8;
+const MIN_CELL_SIZE = 4;
+const CYCLE_PRESET_SHORTCUT = 'cycle-preset-shortcut';
+const GRID_PRESETS = [
+    {
+        name: 'default',
+        cellSize: 8,
+        backgroundOpacity: 0.28,
+        amberIntensity: 1.0,
+    },
+    {
+        name: 'medium',
+        cellSize: 16,
+        backgroundOpacity: 0.4,
+        amberIntensity: 1.6,
+    },
+    {
+        name: 'large-strong',
+        cellSize: 32,
+        backgroundOpacity: 0.65,
+        amberIntensity: 3.0,
+    },
+];
 
 export default class AsciiOverlayExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._overlay = null;
         this._overlayRepaintId = null;
+        this._gridPresetIndex = 0;
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed',
             () => this._syncOverlayGeometry()
@@ -25,6 +47,16 @@ export default class AsciiOverlayExtension extends Extension {
             Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
             () => this._toggleOverlay()
         );
+        this._logShortcutRegistration(TOGGLE_SHORTCUT);
+
+        Main.wm.addKeybinding(
+            CYCLE_PRESET_SHORTCUT,
+            this._settings,
+            Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+            () => this._cycleGridPreset()
+        );
+        this._logShortcutRegistration(CYCLE_PRESET_SHORTCUT);
 
         if (this._settings.get_boolean('overlay-enabled'))
             this._showOverlay();
@@ -34,6 +66,7 @@ export default class AsciiOverlayExtension extends Extension {
 
     disable() {
         Main.wm.removeKeybinding(TOGGLE_SHORTCUT);
+        Main.wm.removeKeybinding(CYCLE_PRESET_SHORTCUT);
 
         if (this._monitorsChangedId) {
             Main.layoutManager.disconnect(this._monitorsChangedId);
@@ -43,6 +76,16 @@ export default class AsciiOverlayExtension extends Extension {
         this._destroyOverlay();
         console.log(`${this.metadata.uuid}: disabled`);
         this._settings = null;
+    }
+
+    _getActiveGridPreset() {
+        return GRID_PRESETS[this._gridPresetIndex];
+    }
+
+    _cycleGridPreset() {
+        this._gridPresetIndex = (this._gridPresetIndex + 1) % GRID_PRESETS.length;
+        this._logActiveGridPreset('cycle-preset');
+        this._queueOverlayRepaint();
     }
 
     _toggleOverlay() {
@@ -71,6 +114,7 @@ export default class AsciiOverlayExtension extends Extension {
 
         Main.uiGroup.add_child(this._overlay);
         this._syncOverlayGeometry();
+        this._logActiveGridPreset('show-overlay');
     }
 
     _destroyOverlay() {
@@ -96,42 +140,75 @@ export default class AsciiOverlayExtension extends Extension {
         this._overlay.queue_repaint();
     }
 
+    _queueOverlayRepaint() {
+        this._overlay?.queue_repaint();
+    }
+
+    _logShortcutRegistration(key) {
+        console.log(
+            `${this.metadata.uuid}: registered ${key} ` +
+            `${JSON.stringify(this._settings.get_strv(key))}`
+        );
+    }
+
+    _logActiveGridPreset(reason) {
+        const preset = this._getActiveGridPreset();
+        console.log(
+            `${this.metadata.uuid}: ${reason} preset=${preset.name} ` +
+            `cell-size=${preset.cellSize} ` +
+            `background-opacity=${preset.backgroundOpacity} ` +
+            `amber-intensity=${preset.amberIntensity}`
+        );
+    }
+
     _drawGridPrototype() {
         if (!this._overlay)
             return;
 
         const [width, height] = this._overlay.get_surface_size();
         const cr = this._overlay.get_context();
+        const preset = this._getActiveGridPreset();
+        const cellSize = Math.max(
+            MIN_CELL_SIZE,
+            preset.cellSize
+        );
+        const backgroundOpacity = preset.backgroundOpacity;
+        const amberIntensity = preset.amberIntensity;
 
-        cr.setSourceRGBA(0.06, 0.015, 0.0, 0.28);
+        cr.setSourceRGBA(0.06, 0.015, 0.0, backgroundOpacity);
         cr.rectangle(0, 0, width, height);
         cr.fill();
 
-        for (let y = 0; y < height; y += CELL_SIZE) {
-            for (let x = 0; x < width; x += CELL_SIZE) {
-                const checker = ((x / CELL_SIZE) + (y / CELL_SIZE)) % 2 === 0;
-                const alpha = checker ? 0.15 : 0.07;
+        for (let y = 0; y < height; y += cellSize) {
+            for (let x = 0; x < width; x += cellSize) {
+                const checker = ((x / cellSize) + (y / cellSize)) % 2 === 0;
+                const alpha = (checker ? 0.15 : 0.07) * amberIntensity;
 
                 cr.setSourceRGBA(1.0, 0.52, 0.08, alpha);
-                cr.rectangle(x, y, CELL_SIZE, CELL_SIZE);
+                cr.rectangle(x, y, cellSize, cellSize);
                 cr.fill();
             }
         }
 
         cr.setLineWidth(1);
-        cr.setSourceRGBA(1.0, 0.7, 0.22, 0.18);
+        cr.setSourceRGBA(1.0, 0.7, 0.22, 0.18 * amberIntensity);
 
-        for (let x = 0.5; x < width; x += CELL_SIZE) {
+        for (let x = 0.5; x < width; x += cellSize) {
             cr.moveTo(x, 0);
             cr.lineTo(x, height);
         }
 
-        for (let y = 0.5; y < height; y += CELL_SIZE) {
+        for (let y = 0.5; y < height; y += cellSize) {
             cr.moveTo(0, y);
             cr.lineTo(width, y);
         }
 
         cr.stroke();
+
+        cr.setSourceRGBA(1.0, 0.82, 0.25, Math.min(1.0, 0.22 * amberIntensity));
+        cr.rectangle(0, 0, Math.min(width, cellSize * 8), Math.min(height, cellSize * 2));
+        cr.fill();
+
         cr.$dispose();
     }
 }
