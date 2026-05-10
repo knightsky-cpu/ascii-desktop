@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.ascii-overlay" path="/org/gnome/shell/extensions/ascii-overlay/">
+    <key name="toggle-shortcut" type="as">
+      <default><![CDATA[['<Ctrl><Alt>a']]]></default>
+      <summary>Toggle ASCII overlay shortcut</summary>
+      <description>Keyboard shortcut used to toggle the desktop ASCII overlay.</description>
+    </key>
+    <key name="overlay-enabled" type="b">
+      <default>false</default>
+      <summary>Overlay enabled state</summary>
+      <description>Whether the ASCII overlay should be active.</description>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,7 @@
+{
+  "uuid": "ascii-overlay@local",
+  "name": "ASCII Desktop Overlay",
+  "description": "Hotkey-toggleable desktop ASCII overlay inspired by AcerolaFX.",
+  "shell-version": ["49"],
+  "settings-schema": "org.gnome.shell.extensions.ascii-overlay"
+}
