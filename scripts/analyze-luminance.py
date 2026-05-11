@@ -6,7 +6,11 @@ import shutil
 import subprocess
 import sys
 
-ASCII_RAMP = " .:coPO?@#"
+RAMP_CHOICES = {
+    "classic": " .:coPO?@#",
+    "fine20": " .-,'`:;coOP0Q&8%B@#",
+}
+ASCII_RAMP = RAMP_CHOICES["classic"]
 
 
 def parse_args():
@@ -36,6 +40,23 @@ def parse_args():
         type=float,
         default=1.0,
         help="Gamma adjustment applied after contrast. Values below 1 brighten midtones.",
+    )
+    parser.add_argument(
+        "--ramp",
+        choices=sorted(RAMP_CHOICES),
+        default="classic",
+        help="Luminance glyph ramp. 'fine20' uses 20 buckets at 0.05 luminance increments.",
+    )
+    parser.add_argument(
+        "--paper-background",
+        action="store_true",
+        help="Treat near-white luminance cells as blank paper instead of dense fill glyphs.",
+    )
+    parser.add_argument(
+        "--paper-threshold",
+        type=float,
+        default=0.92,
+        help="Adjusted luminance at or above this value becomes space with --paper-background.",
     )
     return parser.parse_args()
 
@@ -92,14 +113,26 @@ def adjust_luminance(luminance, contrast, gamma):
     return clamp(math.pow(adjusted, gamma))
 
 
-def luminance_to_glyph(r, g, b, contrast, gamma):
+def luminance_to_glyph(r, g, b, contrast, gamma, ramp, paper_background, paper_threshold):
     luminance = ((0.2127 * r) + (0.7152 * g) + (0.0722 * b)) / 255.0
     luminance = adjust_luminance(luminance, contrast, gamma)
-    index = min(len(ASCII_RAMP) - 1, math.floor(luminance * len(ASCII_RAMP)))
-    return luminance, ASCII_RAMP[index]
+    if paper_background and luminance >= paper_threshold:
+        return luminance, " "
+
+    index = min(len(ramp) - 1, math.floor(luminance * len(ramp)))
+    return luminance, ramp[index]
 
 
-def ascii_frame(path, cols, rows, contrast, gamma):
+def ascii_frame(
+    path,
+    cols,
+    rows,
+    contrast,
+    gamma,
+    ramp=ASCII_RAMP,
+    paper_background=False,
+    paper_threshold=0.92
+):
     pixels = read_ppm_rgb(path, cols, rows)
     histogram = Counter()
     lines = []
@@ -112,7 +145,16 @@ def ascii_frame(path, cols, rows, contrast, gamma):
             g = pixels[cursor + 1]
             b = pixels[cursor + 2]
             cursor += 3
-            _luminance, glyph = luminance_to_glyph(r, g, b, contrast, gamma)
+            _luminance, glyph = luminance_to_glyph(
+                r,
+                g,
+                b,
+                contrast,
+                gamma,
+                ramp,
+                paper_background,
+                paper_threshold
+            )
             glyphs.append(glyph)
             histogram[glyph] += 1
         lines.append("".join(glyphs))
@@ -120,10 +162,10 @@ def ascii_frame(path, cols, rows, contrast, gamma):
     return lines, histogram
 
 
-def print_histogram(histogram, total_cells):
+def print_histogram(histogram, total_cells, ramp):
     print()
     print("histogram:")
-    for glyph in ASCII_RAMP:
+    for glyph in ramp:
         count = histogram[glyph]
         percent = (count / total_cells) * 100 if total_cells else 0
         label = "space" if glyph == " " else glyph
@@ -147,13 +189,20 @@ def main():
         raise RuntimeError("--gamma must be greater than 0.")
     if args.contrast < 0:
         raise RuntimeError("--contrast must be greater than or equal to 0.")
+    if not 0 <= args.paper_threshold <= 1:
+        raise RuntimeError("--paper-threshold must be between 0 and 1.")
+
+    ramp = RAMP_CHOICES[args.ramp]
 
     full_lines, full_histogram = ascii_frame(
         args.image,
         full_cols,
         full_rows,
         args.contrast,
-        args.gamma
+        args.gamma,
+        ramp,
+        args.paper_background,
+        args.paper_threshold
     )
     preview_lines = full_lines
 
@@ -163,7 +212,10 @@ def main():
             cols,
             rows,
             args.contrast,
-            args.gamma
+            args.gamma,
+            ramp,
+            args.paper_background,
+            args.paper_threshold
         )
 
     if args.full_output:
@@ -174,14 +226,15 @@ def main():
     print(f"source={source_width}x{source_height} cell-size={args.cell_size}")
     print(
         f"cells={full_cols}x{full_rows} preview={cols}x{rows} "
-        f"ramp={ASCII_RAMP!r} contrast={args.contrast} gamma={args.gamma}"
+        f"ramp={ramp!r} ramp-name={args.ramp} contrast={args.contrast} gamma={args.gamma} "
+        f"paper-background={args.paper_background} paper-threshold={args.paper_threshold}"
     )
     if args.full_output:
         print(f"full-output={args.full_output}")
     print()
 
     print("\n".join(preview_lines))
-    print_histogram(full_histogram, full_cols * full_rows)
+    print_histogram(full_histogram, full_cols * full_rows, ramp)
 
 
 if __name__ == "__main__":

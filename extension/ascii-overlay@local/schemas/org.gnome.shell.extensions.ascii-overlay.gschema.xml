@@ -16,6 +16,11 @@
       <summary>Run capture probe shortcut</summary>
       <description>Temporary keyboard shortcut used to test whether GNOME Shell can capture a desktop frame from inside the extension.</description>
     </key>
+    <key name="cycle-style-shortcut" type="as">
+      <default><![CDATA[['<Ctrl><Alt>apostrophe']]]></default>
+      <summary>Cycle visual style shortcut</summary>
+      <description>Keyboard shortcut used to cycle the live ASCII color/filter style.</description>
+    </key>
     <key name="overlay-enabled" type="b">
       <default>false</default>
       <summary>Overlay enabled state</summary>

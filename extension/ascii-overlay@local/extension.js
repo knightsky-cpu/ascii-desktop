@@ -11,8 +11,9 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const TOGGLE_SHORTCUT = 'toggle-shortcut';
-const MIN_CELL_SIZE = 4;
+const MIN_CELL_SIZE = 1;
 const CYCLE_PRESET_SHORTCUT = 'cycle-preset-shortcut';
+const CYCLE_STYLE_SHORTCUT = 'cycle-style-shortcut';
 const CAPTURE_PROBE_SHORTCUT = 'capture-probe-shortcut';
 const ASCII_RAMP = ' .:coPO?@#';
 const LUMINANCE_CONTRAST = 1.0;
@@ -22,7 +23,208 @@ const CAPTURE_STATS_LOG_EVERY = 30;
 const READBACK_STATS_LOG_EVERY = 30;
 const READBACK_PROBE_MAX_SAMPLES = 4096;
 const STAGE_PREVIEW_DURATION_MS = 2500;
+const STYLE_GRID_SUPPRESS_US = 250000;
+const ASCII_FILL_SNIPPET_TEMPLATE = `
+vec2 gridSize = vec2(__GRID_COLS__.0, __GRID_ROWS__.0);
+vec2 cell = cogl_tex_coord0_in.xy * gridSize;
+vec2 local = fract(cell);
+vec2 cellUv = (floor(cell) + vec2(0.5, 0.5)) / gridSize;
+vec4 cellColor = texture2D(cogl_sampler0, cellUv);
+float luminance = dot(cellColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+float exposed = pow(clamp((luminance * 1.35) + 0.08, 0.0, 0.999), 0.72);
+float bucket = floor(exposed * 10.0);
+float level = bucket / 9.0;
+vec2 texel = 1.0 / gridSize;
+vec2 leftUv = clamp(cellUv + vec2(-texel.x, 0.0), vec2(0.0), vec2(1.0));
+vec2 rightUv = clamp(cellUv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0));
+vec2 topUv = clamp(cellUv + vec2(0.0, -texel.y), vec2(0.0), vec2(1.0));
+vec2 bottomUv = clamp(cellUv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0));
+vec2 topLeftUv = clamp(cellUv + vec2(-texel.x, -texel.y), vec2(0.0), vec2(1.0));
+vec2 topRightUv = clamp(cellUv + vec2(texel.x, -texel.y), vec2(0.0), vec2(1.0));
+vec2 bottomLeftUv = clamp(cellUv + vec2(-texel.x, texel.y), vec2(0.0), vec2(1.0));
+vec2 bottomRightUv = clamp(cellUv + vec2(texel.x, texel.y), vec2(0.0), vec2(1.0));
+float lumLeft = dot(texture2D(cogl_sampler0, leftUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumRight = dot(texture2D(cogl_sampler0, rightUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumTop = dot(texture2D(cogl_sampler0, topUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumBottom = dot(texture2D(cogl_sampler0, bottomUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumTopLeft = dot(texture2D(cogl_sampler0, topLeftUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumTopRight = dot(texture2D(cogl_sampler0, topRightUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumBottomLeft = dot(texture2D(cogl_sampler0, bottomLeftUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float lumBottomRight = dot(texture2D(cogl_sampler0, bottomRightUv).rgb, vec3(0.2126, 0.7152, 0.0722));
+float localMean = (
+    lumTopLeft + lumTop + lumTopRight +
+    lumLeft + luminance + lumRight +
+    lumBottomLeft + lumBottom + lumBottomRight
+) / 9.0;
+float dogContrast = clamp(abs(luminance - localMean) * 4.0, 0.0, 1.0);
+float gradientX = (lumTopRight + (2.0 * lumRight) + lumBottomRight) - (lumTopLeft + (2.0 * lumLeft) + lumBottomLeft);
+float gradientY = (lumBottomLeft + (2.0 * lumBottom) + lumBottomRight) - (lumTopLeft + (2.0 * lumTop) + lumTopRight);
+float gradientMagnitude = length(vec2(gradientX, gradientY));
+float absGradientX = abs(gradientX);
+float absGradientY = abs(gradientY);
+float majorGradient = max(absGradientX, absGradientY);
+float minorGradient = min(absGradientX, absGradientY);
+float axisDominance = majorGradient / max(0.0001, absGradientX + absGradientY);
+float axisMargin = (majorGradient - minorGradient) / max(0.0001, absGradientX + absGradientY);
+float diagonalBalance = 1.0 - axisMargin;
+float directionCoherence = max(
+    smoothstep(0.58, 0.78, axisDominance),
+    smoothstep(0.42, 0.62, diagonalBalance)
+);
+float dogGate = smoothstep(0.025, 0.11, dogContrast);
+float edgeStrength = smoothstep(0.62, 1.12, gradientMagnitude) * dogGate * directionCoherence;
+
+float dotBottom = 1.0 - smoothstep(0.09, 0.13, distance(local, vec2(0.5, 0.76)));
+float dotTop = 1.0 - smoothstep(0.08, 0.12, distance(local, vec2(0.5, 0.38)));
+float ringDistance = distance(local, vec2(0.5, 0.5));
+float outerRing = 1.0 - smoothstep(0.41, 0.46, ringDistance);
+float innerRing = 1.0 - smoothstep(0.24, 0.29, ringDistance);
+float ring = clamp(outerRing - innerRing, 0.0, 1.0);
+float leftStroke = step(local.x, 0.28) * step(0.18, local.y) * step(local.y, 0.84);
+float topStroke = step(0.18, local.x) * step(local.x, 0.78) * step(local.y, 0.25);
+float midStroke = step(0.18, local.x) * step(local.x, 0.75) * step(0.43, local.y) * step(local.y, 0.56);
+float lowerStroke = step(0.20, local.x) * step(local.x, 0.82) * step(0.72, local.y) * step(local.y, 0.84);
+float rightUpperStroke = step(0.66, local.x) * step(local.x, 0.84) * step(0.20, local.y) * step(local.y, 0.54);
+float rightStroke = step(0.70, local.x) * step(local.x, 0.87) * step(0.18, local.y) * step(local.y, 0.84);
+float verticalMid = step(0.42, local.x) * step(local.x, 0.58);
+float horizontalMid = step(0.42, local.y) * step(local.y, 0.58);
+float edgeHorizontal = step(0.70, local.y) * step(local.y, 0.86) * step(0.12, local.x) * step(local.x, 0.88);
+float edgeVertical = step(0.42, local.x) * step(local.x, 0.58) * step(0.12, local.y) * step(local.y, 0.88);
+float edgeSlash = 1.0 - smoothstep(0.06, 0.13, abs((local.x + local.y) - 1.0));
+edgeSlash *= step(0.08, local.x) * step(local.x, 0.92) * step(0.08, local.y) * step(local.y, 0.92);
+float edgeBackslash = 1.0 - smoothstep(0.06, 0.13, abs(local.x - local.y));
+edgeBackslash *= step(0.08, local.x) * step(local.x, 0.92) * step(0.08, local.y) * step(local.y, 0.92);
+
+float glyph = 0.0;
+if (bucket < 1.0)
+    glyph = 0.0;
+else if (bucket < 2.0)
+    glyph = dotBottom;
+else if (bucket < 3.0)
+    glyph = max(dotTop, dotBottom);
+else if (bucket < 4.0)
+    glyph = ring * (1.0 - step(0.58, local.x));
+else if (bucket < 5.0)
+    glyph = ring;
+else if (bucket < 6.0)
+    glyph = max(max(leftStroke, topStroke), max(midStroke, rightUpperStroke));
+else if (bucket < 7.0)
+    glyph = max(ring, max(leftStroke * 0.8, rightStroke * 0.8));
+else if (bucket < 8.0)
+    glyph = max(max(topStroke, rightUpperStroke), max(midStroke, dotBottom));
+else if (bucket < 9.0)
+    glyph = max(max(ring, dotBottom * 0.9), max(midStroke * 0.7, rightUpperStroke * 0.65));
+else
+    glyph = max(max(verticalMid, horizontalMid), max(leftStroke, rightStroke));
+
+float edgeGlyph = edgeHorizontal;
+if (absGradientX > absGradientY * 1.35)
+    edgeGlyph = edgeVertical;
+else if (absGradientY > absGradientX * 1.35)
+    edgeGlyph = edgeHorizontal;
+else if (gradientX * gradientY > 0.0)
+    edgeGlyph = edgeSlash;
+else
+    edgeGlyph = edgeBackslash;
+float cellPixelSize = __CELL_SIZE__.0;
+float tinyCell = 1.0 - smoothstep(1.0, 2.0, cellPixelSize);
+float cellHash = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
+float dither = (cellHash - 0.5) * 0.035;
+float aaGlyph = smoothstep(0.03, 0.90, glyph);
+float tinyGlyphStrength = mix(0.14, 0.64, smoothstep(1.0, 2.0, cellPixelSize));
+float glyphStrength = mix(tinyGlyphStrength, 0.84, smoothstep(2.0, 5.0, cellPixelSize));
+float asciiMask = mix(1.0, aaGlyph, glyphStrength);
+float edgeMask = smoothstep(0.18, 0.92, edgeGlyph * edgeStrength);
+float edgeWeight = mix(edgeStrength * 0.20, edgeStrength * 0.64, smoothstep(2.0, 5.0, cellPixelSize));
+vec3 sourceColor = clamp(cellColor.rgb + vec3(dither), vec3(0.0), vec3(1.0));
+vec3 posterColor = floor((pow(sourceColor, vec3(0.9)) * 9.0) + 0.5) / 9.0;
+vec3 gray = vec3(dot(posterColor, vec3(0.2126, 0.7152, 0.0722)));
+vec2 centeredUv = cogl_tex_coord0_in.xy - vec2(0.5);
+float vignette = smoothstep(0.78, 0.18, dot(centeredUv, centeredUv));
+float classicInkAmount = clamp(0.35 + (max(level, edgeStrength) * 0.65), 0.0, 1.0);
+
+vec3 crtPalette = mix(gray, posterColor, 0.62);
+crtPalette = pow(clamp(crtPalette * 1.12, vec3(0.0), vec3(1.0)), vec3(0.86));
+crtPalette *= mix(vec3(0.80, 0.96, 1.16), vec3(1.20, 1.02, 0.80), level);
+crtPalette = mix(vec3(0.018, 0.030, 0.045), crtPalette, 0.90);
+vec3 crtInk = mix(vec3(0.018, 0.030, 0.045), crtPalette, classicInkAmount);
+vec3 crtColor = mix(vec3(0.018, 0.030, 0.045), crtInk, asciiMask);
+crtColor *= mix(0.74, 1.0, vignette);
+crtColor = mix(crtColor, crtColor + vec3(0.12, 0.15, 0.08), edgeMask * edgeWeight);
+
+vec3 hybridBase = mix(gray, posterColor, 0.78);
+hybridBase = mix(vec3(0.018, 0.022, 0.030), hybridBase, 0.90);
+hybridBase *= vec3(0.96, 1.02, 1.08);
+vec3 hybridEdge = mix(vec3(1.0, 0.78, 0.42), vec3(1.0, 0.38, 0.82), step(0.5, cellHash));
+vec3 hybridInk = mix(vec3(0.018, 0.022, 0.030), hybridBase, classicInkAmount);
+hybridInk = mix(hybridInk, hybridEdge, clamp(edgeMask * (edgeWeight + 0.16), 0.0, 1.0));
+vec3 hybridColor = mix(vec3(0.018, 0.022, 0.030), hybridInk, asciiMask);
+
+vec3 invertColor = pow(vec3(1.0) - posterColor, vec3(0.92));
+vec3 invertInk = mix(vec3(0.02, 0.02, 0.025), invertColor, classicInkAmount);
+invertInk = mix(invertInk, vec3(1.0) - hybridEdge, edgeMask * edgeWeight);
+invertColor = mix(vec3(0.02, 0.02, 0.025), invertInk, asciiMask);
+
+vec3 cyberBase = mix(gray, posterColor, 0.52);
+cyberBase *= vec3(0.65, 0.92, 1.28);
+cyberBase = mix(vec3(0.025, 0.010, 0.050), cyberBase, 0.88);
+vec3 cyberGlow = mix(vec3(1.0, 0.12, 0.72), vec3(0.72, 0.18, 1.0), step(0.46, cellHash));
+vec3 cyberInk = mix(vec3(0.025, 0.010, 0.050), cyberBase, classicInkAmount);
+cyberInk = mix(cyberInk, cyberGlow, clamp((edgeMask * (edgeWeight + 0.22)) + (max(level - 0.72, 0.0) * 0.32), 0.0, 1.0));
+vec3 cyberColor = mix(vec3(0.025, 0.010, 0.050), cyberInk, asciiMask);
+cyberColor *= mix(0.76, 1.0, vignette);
+
+vec3 classicShadow = vec3(0.12, 0.065, 0.018);
+vec3 classicAmber = vec3(1.0, 0.72, 0.18);
+vec3 classicInk = mix(classicShadow, classicAmber, classicInkAmount);
+vec3 classicAmberColor = mix(classicShadow, classicInk, asciiMask);
+
+float styleMode = __STYLE_MODE__.0;
+vec3 styledColor = classicAmberColor;
+if (styleMode < 0.5)
+    styledColor = classicAmberColor;
+else if (styleMode < 1.5)
+    styledColor = crtColor;
+else if (styleMode < 2.5)
+    styledColor = hybridColor;
+else if (styleMode < 3.5)
+    styledColor = invertColor;
+else if (styleMode < 4.5)
+    styledColor = cyberColor;
+else
+    styledColor = cyberColor;
+float tinyLift = tinyCell * 0.10;
+cogl_color_out = vec4(mix(styledColor, styledColor * clamp(asciiMask + tinyLift, 0.0, 1.0), tinyCell), cogl_color_out.a);
+`;
 const GRID_PRESETS = [
+    {
+        name: 'pixel-ascii',
+        cellSize: 1,
+        backgroundOpacity: 0.12,
+        amberIntensity: 0.45,
+        fontScale: 0.92,
+    },
+    {
+        name: 'nano-ascii',
+        cellSize: 2,
+        backgroundOpacity: 0.18,
+        amberIntensity: 0.65,
+        fontScale: 0.92,
+    },
+    {
+        name: 'micro-ascii',
+        cellSize: 4,
+        backgroundOpacity: 0.22,
+        amberIntensity: 0.8,
+        fontScale: 0.92,
+    },
+    {
+        name: 'small-ascii',
+        cellSize: 5,
+        backgroundOpacity: 0.24,
+        amberIntensity: 0.85,
+        fontScale: 0.92,
+    },
     {
         name: 'fine-ascii',
         cellSize: 8,
@@ -31,18 +233,33 @@ const GRID_PRESETS = [
         fontScale: 0.92,
     },
     {
-        name: 'medium-ascii',
-        cellSize: 16,
-        backgroundOpacity: 0.4,
-        amberIntensity: 1.6,
-        fontScale: 0.9,
+        name: 'soft-large-ascii',
+        cellSize: 10,
+        backgroundOpacity: 0.32,
+        amberIntensity: 1.1,
+        fontScale: 0.92,
+    },
+];
+const VISUAL_STYLES = [
+    {
+        name: 'classic-amber',
+        styleMode: 0,
     },
     {
-        name: 'large-strong-ascii',
-        cellSize: 32,
-        backgroundOpacity: 0.65,
-        amberIntensity: 3.0,
-        fontScale: 0.86,
+        name: 'muted-crt',
+        styleMode: 1,
+    },
+    {
+        name: 'hybrid-edge-tint',
+        styleMode: 2,
+    },
+    {
+        name: 'invert',
+        styleMode: 3,
+    },
+    {
+        name: 'cyberpunk',
+        styleMode: 4,
     },
 ];
 
@@ -62,6 +279,8 @@ export default class AsciiOverlayExtension extends Extension {
         this._stagePreviewActor = null;
         this._stagePreviewTimeoutId = null;
         this._gridPresetIndex = 0;
+        this._visualStyleIndex = 0;
+        this._suppressGridPresetUntilUs = 0;
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed',
             () => this._syncOverlayGeometry()
@@ -94,6 +313,15 @@ export default class AsciiOverlayExtension extends Extension {
         );
         this._logShortcutRegistration(CAPTURE_PROBE_SHORTCUT);
 
+        Main.wm.addKeybinding(
+            CYCLE_STYLE_SHORTCUT,
+            this._settings,
+            Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+            () => this._cycleVisualStyle()
+        );
+        this._logShortcutRegistration(CYCLE_STYLE_SHORTCUT);
+
         if (this._settings.get_boolean('overlay-enabled'))
             this._showOverlay();
 
@@ -104,6 +332,7 @@ export default class AsciiOverlayExtension extends Extension {
         Main.wm.removeKeybinding(TOGGLE_SHORTCUT);
         Main.wm.removeKeybinding(CYCLE_PRESET_SHORTCUT);
         Main.wm.removeKeybinding(CAPTURE_PROBE_SHORTCUT);
+        Main.wm.removeKeybinding(CYCLE_STYLE_SHORTCUT);
 
         if (this._monitorsChangedId) {
             Main.layoutManager.disconnect(this._monitorsChangedId);
@@ -120,9 +349,28 @@ export default class AsciiOverlayExtension extends Extension {
         return GRID_PRESETS[this._gridPresetIndex];
     }
 
+    _getActiveVisualStyle() {
+        return VISUAL_STYLES[this._visualStyleIndex];
+    }
+
     _cycleGridPreset() {
+        const nowUs = GLib.get_monotonic_time();
+        if (nowUs < this._suppressGridPresetUntilUs) {
+            console.log(`${this.metadata.uuid}: cycle-preset ignored reason=style-shortcut-guard`);
+            return;
+        }
+
         this._gridPresetIndex = (this._gridPresetIndex + 1) % GRID_PRESETS.length;
         this._logActiveGridPreset('cycle-preset');
+        this._syncGpuOverlayEffect();
+        this._queueOverlayRepaint();
+    }
+
+    _cycleVisualStyle() {
+        this._suppressGridPresetUntilUs = GLib.get_monotonic_time() + STYLE_GRID_SUPPRESS_US;
+        this._visualStyleIndex = (this._visualStyleIndex + 1) % VISUAL_STYLES.length;
+        this._logActiveVisualStyle('cycle-style');
+        this._syncGpuOverlayEffect();
         this._queueOverlayRepaint();
     }
 
@@ -144,6 +392,7 @@ export default class AsciiOverlayExtension extends Extension {
         if (this._overlay)
             return;
 
+        this._gridPresetIndex = 0;
         this._overlay = new Clutter.Actor({
             name: 'ascii-overlay-gpu',
             reactive: false,
@@ -183,6 +432,64 @@ export default class AsciiOverlayExtension extends Extension {
         this._overlay?.queue_redraw?.();
     }
 
+    _getGridDimensions(cellSize) {
+        const width = Math.max(1, Math.floor(Main.uiGroup.width || 3440));
+        const height = Math.max(1, Math.floor(Main.uiGroup.height || 1440));
+
+        return [
+            Math.max(1, Math.floor(width / cellSize)),
+            Math.max(1, Math.floor(height / cellSize)),
+        ];
+    }
+
+    _buildAsciiFillSnippet(cellSize, style) {
+        const [cols, rows] = this._getGridDimensions(cellSize);
+
+        return ASCII_FILL_SNIPPET_TEMPLATE
+            .split('__GRID_COLS__').join(String(cols))
+            .split('__GRID_ROWS__').join(String(rows))
+            .split('__CELL_SIZE__').join(String(cellSize))
+            .split('__STYLE_MODE__').join(String(style.styleMode));
+    }
+
+    _gpuEffectName(presetIndex, styleIndex) {
+        return `ascii-overlay-gpu-glsl-fill-edge-${presetIndex}-${styleIndex}`;
+    }
+
+    _setEffectEnabled(effect, enabled) {
+        if (!effect)
+            return;
+
+        if (typeof effect.set_enabled === 'function')
+            effect.set_enabled(enabled);
+        else
+            effect.enabled = enabled;
+    }
+
+    _syncGpuOverlayEffect() {
+        if (!this._overlay || typeof this._overlay.get_effect !== 'function')
+            return;
+
+        GRID_PRESETS.forEach((_preset, presetIndex) => {
+            VISUAL_STYLES.forEach((_style, styleIndex) => {
+                const effect = this._overlay.get_effect(this._gpuEffectName(presetIndex, styleIndex));
+                this._setEffectEnabled(
+                    effect,
+                    presetIndex === this._gridPresetIndex && styleIndex === this._visualStyleIndex
+                );
+            });
+        });
+
+        const preset = this._getActiveGridPreset();
+        const style = this._getActiveVisualStyle();
+        const [cols, rows] = this._getGridDimensions(preset.cellSize);
+        console.log(
+            `${this.metadata.uuid}: gpu-overlay effect active ` +
+            `glsl=ascii-fill-edge-coherent-10 style=${style.name} ` +
+            `cell-size=${preset.cellSize} grid=${cols}x${rows}`
+        );
+    }
+
     _logShortcutRegistration(key) {
         console.log(
             `${this.metadata.uuid}: registered ${key} ` +
@@ -192,12 +499,23 @@ export default class AsciiOverlayExtension extends Extension {
 
     _logActiveGridPreset(reason) {
         const preset = this._getActiveGridPreset();
+        const style = this._getActiveVisualStyle();
         console.log(
             `${this.metadata.uuid}: ${reason} preset=${preset.name} ` +
+            `style=${style.name} ` +
             `cell-size=${preset.cellSize} ` +
             `background-opacity=${preset.backgroundOpacity} ` +
             `amber-intensity=${preset.amberIntensity} ` +
             `font-scale=${preset.fontScale}`
+        );
+    }
+
+    _logActiveVisualStyle(reason) {
+        const style = this._getActiveVisualStyle();
+        const preset = this._getActiveGridPreset();
+        console.log(
+            `${this.metadata.uuid}: ${reason} style=${style.name} ` +
+            `preset=${preset.name} cell-size=${preset.cellSize}`
         );
     }
 
@@ -337,16 +655,23 @@ export default class AsciiOverlayExtension extends Extension {
 
     _applyStagePreviewEffect(actor) {
         try {
+            const preset = this._getActiveGridPreset();
+            const style = this._getActiveVisualStyle();
+            const [cols, rows] = this._getGridDimensions(preset.cellSize);
             const glsl = new Shell.GLSLEffect();
             glsl.add_glsl_snippet(
                 Cogl.SnippetHook.FRAGMENT,
                 '',
-                'cogl_color_out = vec4(1.0 - cogl_color_out.rgb, cogl_color_out.a);',
+                this._buildAsciiFillSnippet(preset.cellSize, style),
                 false
             );
-            actor.add_effect_with_name('ascii-overlay-glsl-invert-probe', glsl);
+            actor.add_effect_with_name('ascii-overlay-glsl-fill-edge-probe', glsl);
 
-            console.log(`${this.metadata.uuid}: stage-preview effects applied glsl=invert`);
+            console.log(
+                `${this.metadata.uuid}: stage-preview effects applied ` +
+                `glsl=ascii-fill-edge-coherent-10 style=${style.name} ` +
+                `cell-size=${preset.cellSize} grid=${cols}x${rows}`
+            );
         } catch (error) {
             console.log(`${this.metadata.uuid}: stage-preview effects failed ${error}`);
         }
@@ -354,16 +679,39 @@ export default class AsciiOverlayExtension extends Extension {
 
     _applyGpuOverlayEffect(actor) {
         try {
-            const glsl = new Shell.GLSLEffect();
-            glsl.add_glsl_snippet(
-                Cogl.SnippetHook.FRAGMENT,
-                '',
-                'cogl_color_out = vec4(1.0 - cogl_color_out.rgb, cogl_color_out.a);',
-                false
-            );
-            actor.add_effect_with_name('ascii-overlay-gpu-glsl-invert', glsl);
+            GRID_PRESETS.forEach((preset, presetIndex) => {
+                VISUAL_STYLES.forEach((style, styleIndex) => {
+                    const [cols, rows] = this._getGridDimensions(preset.cellSize);
+                    const glsl = new Shell.GLSLEffect();
+                    glsl.add_glsl_snippet(
+                        Cogl.SnippetHook.FRAGMENT,
+                        '',
+                        this._buildAsciiFillSnippet(preset.cellSize, style),
+                        false
+                    );
+                    const active = presetIndex === this._gridPresetIndex &&
+                        styleIndex === this._visualStyleIndex;
+                    this._setEffectEnabled(glsl, active);
+                    actor.add_effect_with_name(this._gpuEffectName(presetIndex, styleIndex), glsl);
 
-            console.log(`${this.metadata.uuid}: gpu-overlay effects applied glsl=invert`);
+                    console.log(
+                        `${this.metadata.uuid}: gpu-overlay effect prepared ` +
+                        `glsl=ascii-fill-edge-coherent-10 preset-index=${presetIndex} ` +
+                        `style-index=${styleIndex} style=${style.name} ` +
+                        `cell-size=${preset.cellSize} grid=${cols}x${rows} ` +
+                        `active=${active}`
+                    );
+                });
+            });
+
+            const preset = this._getActiveGridPreset();
+            const style = this._getActiveVisualStyle();
+            const [cols, rows] = this._getGridDimensions(preset.cellSize);
+            console.log(
+                `${this.metadata.uuid}: gpu-overlay effects applied ` +
+                `glsl=ascii-fill-edge-coherent-10 style=${style.name} ` +
+                `cell-size=${preset.cellSize} grid=${cols}x${rows}`
+            );
         } catch (error) {
             console.log(`${this.metadata.uuid}: gpu-overlay effects failed ${error}`);
         }
