@@ -1,0 +1,7 @@
+{
+  "uuid": "original-grid-overlay@local",
+  "name": "Original Grid Desktop Overlay",
+  "description": "Hotkey-toggleable amber grid overlay prototype preserved from the early ASCII Desktop Overlay work.",
+  "shell-version": ["49"],
+  "settings-schema": "org.gnome.shell.extensions.original-grid-overlay"
+}

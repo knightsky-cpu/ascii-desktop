@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.original-grid-overlay" path="/org/gnome/shell/extensions/original-grid-overlay/">
+    <key name="toggle-shortcut" type="as">
+      <default><![CDATA[['<Ctrl><Alt>a']]]></default>
+      <summary>Toggle original grid overlay shortcut</summary>
+      <description>Keyboard shortcut used to toggle the original desktop grid overlay.</description>
+    </key>
+    <key name="cycle-preset-shortcut" type="as">
+      <default><![CDATA[['<Ctrl><Alt>period']]]></default>
+      <summary>Cycle original grid preset shortcut</summary>
+      <description>Keyboard shortcut used to cycle the original grid overlay preset.</description>
+    </key>
+    <key name="overlay-enabled" type="b">
+      <default>false</default>
+      <summary>Overlay enabled state</summary>
+      <description>Whether the original grid overlay should be active.</description>
+    </key>
+  </schema>
+</schemalist>

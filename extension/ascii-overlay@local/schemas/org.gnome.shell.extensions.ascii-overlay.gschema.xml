@@ -11,6 +11,11 @@
       <summary>Cycle grid preset shortcut</summary>
       <description>Keyboard shortcut used to cycle the prototype grid preset.</description>
     </key>
+    <key name="capture-probe-shortcut" type="as">
+      <default><![CDATA[['<Ctrl><Alt>comma']]]></default>
+      <summary>Run capture probe shortcut</summary>
+      <description>Temporary keyboard shortcut used to test whether GNOME Shell can capture a desktop frame from inside the extension.</description>
+    </key>
     <key name="overlay-enabled" type="b">
       <default>false</default>
       <summary>Overlay enabled state</summary>
