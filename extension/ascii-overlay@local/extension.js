@@ -15,7 +15,21 @@ const MIN_CELL_SIZE = 1;
 const CYCLE_PRESET_SHORTCUT = 'cycle-preset-shortcut';
 const CYCLE_STYLE_SHORTCUT = 'cycle-style-shortcut';
 const CAPTURE_PROBE_SHORTCUT = 'capture-probe-shortcut';
-const ASCII_RAMP = ' .:coPO?@#';
+const ASCII_RAMPS = {
+    classic10: ' .:coPO?@#',
+    fine20: " .-,'`:;coOP0Q&8%B@#",
+};
+const LUMINANCE_MODE_FILE = 'ascii-overlay-luminance-mode';
+const LUMINANCE_MODES = {
+    classic10: {
+        name: 'classic10',
+        buckets: 10,
+    },
+    fine20: {
+        name: 'fine20',
+        buckets: 20,
+    },
+};
 const LUMINANCE_CONTRAST = 1.0;
 const LUMINANCE_GAMMA = 0.9;
 const CAPTURE_INTERVAL_MS = 66;
@@ -32,8 +46,9 @@ vec2 cellUv = (floor(cell) + vec2(0.5, 0.5)) / gridSize;
 vec4 cellColor = texture2D(cogl_sampler0, cellUv);
 float luminance = dot(cellColor.rgb, vec3(0.2126, 0.7152, 0.0722));
 float exposed = pow(clamp((luminance * 1.35) + 0.08, 0.0, 0.999), 0.72);
-float bucket = floor(exposed * 10.0);
-float level = bucket / 9.0;
+float bucket = floor(exposed * __LUMINANCE_BUCKETS__.0);
+float level = bucket / __LUMINANCE_MAX_BUCKET__.0;
+float glyphBucket = floor((bucket / __LUMINANCE_BUCKETS__.0) * 10.0);
 vec2 texel = 1.0 / gridSize;
 vec2 leftUv = clamp(cellUv + vec2(-texel.x, 0.0), vec2(0.0), vec2(1.0));
 vec2 rightUv = clamp(cellUv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0));
@@ -96,23 +111,23 @@ float edgeBackslash = 1.0 - smoothstep(0.06, 0.13, abs(local.x - local.y));
 edgeBackslash *= step(0.08, local.x) * step(local.x, 0.92) * step(0.08, local.y) * step(local.y, 0.92);
 
 float glyph = 0.0;
-if (bucket < 1.0)
+if (glyphBucket < 1.0)
     glyph = 0.0;
-else if (bucket < 2.0)
+else if (glyphBucket < 2.0)
     glyph = dotBottom;
-else if (bucket < 3.0)
+else if (glyphBucket < 3.0)
     glyph = max(dotTop, dotBottom);
-else if (bucket < 4.0)
+else if (glyphBucket < 4.0)
     glyph = ring * (1.0 - step(0.58, local.x));
-else if (bucket < 5.0)
+else if (glyphBucket < 5.0)
     glyph = ring;
-else if (bucket < 6.0)
+else if (glyphBucket < 6.0)
     glyph = max(max(leftStroke, topStroke), max(midStroke, rightUpperStroke));
-else if (bucket < 7.0)
+else if (glyphBucket < 7.0)
     glyph = max(ring, max(leftStroke * 0.8, rightStroke * 0.8));
-else if (bucket < 8.0)
+else if (glyphBucket < 8.0)
     glyph = max(max(topStroke, rightUpperStroke), max(midStroke, dotBottom));
-else if (bucket < 9.0)
+else if (glyphBucket < 9.0)
     glyph = max(max(ring, dotBottom * 0.9), max(midStroke * 0.7, rightUpperStroke * 0.65));
 else
     glyph = max(max(verticalMid, horizontalMid), max(leftStroke, rightStroke));
@@ -179,6 +194,16 @@ vec3 classicAmber = vec3(1.0, 0.72, 0.18);
 vec3 classicInk = mix(classicShadow, classicAmber, classicInkAmount);
 vec3 classicAmberColor = mix(classicShadow, classicInk, asciiMask);
 
+vec3 darkAmberShadow = vec3(0.030, 0.014, 0.003);
+vec3 darkAmber = vec3(0.78, 0.36, 0.055);
+vec3 darkAmberInk = mix(darkAmberShadow, darkAmber, classicInkAmount);
+vec3 darkAmberColor = mix(darkAmberShadow, darkAmberInk, asciiMask);
+darkAmberColor = mix(
+    darkAmberColor,
+    darkAmberColor + vec3(0.12, 0.045, 0.006),
+    edgeMask * edgeWeight * 0.45
+);
+
 float styleMode = __STYLE_MODE__.0;
 vec3 styledColor = classicAmberColor;
 if (styleMode < 0.5)
@@ -191,6 +216,8 @@ else if (styleMode < 3.5)
     styledColor = invertColor;
 else if (styleMode < 4.5)
     styledColor = cyberColor;
+else if (styleMode < 5.5)
+    styledColor = darkAmberColor;
 else
     styledColor = cyberColor;
 float tinyLift = tinyCell * 0.10;
@@ -246,6 +273,10 @@ const VISUAL_STYLES = [
         styleMode: 0,
     },
     {
+        name: 'dark-amber',
+        styleMode: 5,
+    },
+    {
         name: 'muted-crt',
         styleMode: 1,
     },
@@ -269,6 +300,7 @@ export default class AsciiOverlayExtension extends Extension {
         this._overlay = null;
         this._overlayRepaintId = null;
         this._overlayHasContent = false;
+        this._activeGpuEffectName = null;
         this._captureLoopId = null;
         this._captureInFlight = false;
         this._captureGrid = null;
@@ -280,6 +312,7 @@ export default class AsciiOverlayExtension extends Extension {
         this._stagePreviewTimeoutId = null;
         this._gridPresetIndex = 0;
         this._visualStyleIndex = 0;
+        this._luminanceMode = this._readLuminanceMode();
         this._suppressGridPresetUntilUs = 0;
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed',
@@ -353,6 +386,35 @@ export default class AsciiOverlayExtension extends Extension {
         return VISUAL_STYLES[this._visualStyleIndex];
     }
 
+    _getLuminanceModePath() {
+        return GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            LUMINANCE_MODE_FILE,
+        ]);
+    }
+
+    _readLuminanceMode() {
+        const modePath = this._getLuminanceModePath();
+
+        try {
+            const [ok, contents] = GLib.file_get_contents(modePath);
+            if (ok) {
+                const modeName = new TextDecoder().decode(contents).trim();
+                if (LUMINANCE_MODES[modeName]) {
+                    console.log(`${this.metadata.uuid}: luminance-mode=${modeName} source=${modePath}`);
+                    return LUMINANCE_MODES[modeName];
+                }
+
+                console.log(`${this.metadata.uuid}: luminance-mode unknown=${modeName} source=${modePath}`);
+            }
+        } catch (_error) {
+            // Missing marker means the standard 10-bucket live renderer.
+        }
+
+        console.log(`${this.metadata.uuid}: luminance-mode=classic10 source=default`);
+        return LUMINANCE_MODES.classic10;
+    }
+
     _cycleGridPreset() {
         const nowUs = GLib.get_monotonic_time();
         if (nowUs < this._suppressGridPresetUntilUs) {
@@ -416,6 +478,7 @@ export default class AsciiOverlayExtension extends Extension {
         this._overlay.destroy();
         this._overlay = null;
         this._overlayHasContent = false;
+        this._activeGpuEffectName = null;
         console.log(`${this.metadata.uuid}: hide-overlay`);
     }
 
@@ -444,12 +507,20 @@ export default class AsciiOverlayExtension extends Extension {
 
     _buildAsciiFillSnippet(cellSize, style) {
         const [cols, rows] = this._getGridDimensions(cellSize);
+        const luminanceMode = this._luminanceMode ?? LUMINANCE_MODES.classic10;
 
         return ASCII_FILL_SNIPPET_TEMPLATE
             .split('__GRID_COLS__').join(String(cols))
             .split('__GRID_ROWS__').join(String(rows))
             .split('__CELL_SIZE__').join(String(cellSize))
+            .split('__LUMINANCE_BUCKETS__').join(String(luminanceMode.buckets))
+            .split('__LUMINANCE_MAX_BUCKET__').join(String(luminanceMode.buckets - 1))
             .split('__STYLE_MODE__').join(String(style.styleMode));
+    }
+
+    _getShaderLabel() {
+        const luminanceMode = this._luminanceMode ?? LUMINANCE_MODES.classic10;
+        return `ascii-fill-edge-coherent-${luminanceMode.buckets}`;
     }
 
     _gpuEffectName(presetIndex, styleIndex) {
@@ -470,22 +541,24 @@ export default class AsciiOverlayExtension extends Extension {
         if (!this._overlay || typeof this._overlay.get_effect !== 'function')
             return;
 
-        GRID_PRESETS.forEach((_preset, presetIndex) => {
-            VISUAL_STYLES.forEach((_style, styleIndex) => {
-                const effect = this._overlay.get_effect(this._gpuEffectName(presetIndex, styleIndex));
-                this._setEffectEnabled(
-                    effect,
-                    presetIndex === this._gridPresetIndex && styleIndex === this._visualStyleIndex
-                );
-            });
-        });
+        const activeName = this._gpuEffectName(this._gridPresetIndex, this._visualStyleIndex);
+
+        if (this._activeGpuEffectName && this._activeGpuEffectName !== activeName) {
+            const previousEffect = this._overlay.get_effect(this._activeGpuEffectName);
+            this._setEffectEnabled(previousEffect, false);
+        }
+
+        const activeEffect = this._overlay.get_effect(activeName);
+        this._setEffectEnabled(activeEffect, true);
+        this._activeGpuEffectName = activeName;
 
         const preset = this._getActiveGridPreset();
         const style = this._getActiveVisualStyle();
         const [cols, rows] = this._getGridDimensions(preset.cellSize);
         console.log(
             `${this.metadata.uuid}: gpu-overlay effect active ` +
-            `glsl=ascii-fill-edge-coherent-10 style=${style.name} ` +
+            `glsl=${this._getShaderLabel()} style=${style.name} ` +
+            `luminance-mode=${this._luminanceMode.name} ` +
             `cell-size=${preset.cellSize} grid=${cols}x${rows}`
         );
     }
@@ -503,6 +576,7 @@ export default class AsciiOverlayExtension extends Extension {
         console.log(
             `${this.metadata.uuid}: ${reason} preset=${preset.name} ` +
             `style=${style.name} ` +
+            `luminance-mode=${this._luminanceMode.name} ` +
             `cell-size=${preset.cellSize} ` +
             `background-opacity=${preset.backgroundOpacity} ` +
             `amber-intensity=${preset.amberIntensity} ` +
@@ -515,7 +589,8 @@ export default class AsciiOverlayExtension extends Extension {
         const preset = this._getActiveGridPreset();
         console.log(
             `${this.metadata.uuid}: ${reason} style=${style.name} ` +
-            `preset=${preset.name} cell-size=${preset.cellSize}`
+            `preset=${preset.name} luminance-mode=${this._luminanceMode.name} ` +
+            `cell-size=${preset.cellSize}`
         );
     }
 
@@ -669,7 +744,8 @@ export default class AsciiOverlayExtension extends Extension {
 
             console.log(
                 `${this.metadata.uuid}: stage-preview effects applied ` +
-                `glsl=ascii-fill-edge-coherent-10 style=${style.name} ` +
+                `glsl=${this._getShaderLabel()} style=${style.name} ` +
+                `luminance-mode=${this._luminanceMode.name} ` +
                 `cell-size=${preset.cellSize} grid=${cols}x${rows}`
             );
         } catch (error) {
@@ -693,11 +769,14 @@ export default class AsciiOverlayExtension extends Extension {
                         styleIndex === this._visualStyleIndex;
                     this._setEffectEnabled(glsl, active);
                     actor.add_effect_with_name(this._gpuEffectName(presetIndex, styleIndex), glsl);
+                    if (active)
+                        this._activeGpuEffectName = this._gpuEffectName(presetIndex, styleIndex);
 
                     console.log(
                         `${this.metadata.uuid}: gpu-overlay effect prepared ` +
-                        `glsl=ascii-fill-edge-coherent-10 preset-index=${presetIndex} ` +
+                        `glsl=${this._getShaderLabel()} preset-index=${presetIndex} ` +
                         `style-index=${styleIndex} style=${style.name} ` +
+                        `luminance-mode=${this._luminanceMode.name} ` +
                         `cell-size=${preset.cellSize} grid=${cols}x${rows} ` +
                         `active=${active}`
                     );
@@ -709,7 +788,8 @@ export default class AsciiOverlayExtension extends Extension {
             const [cols, rows] = this._getGridDimensions(preset.cellSize);
             console.log(
                 `${this.metadata.uuid}: gpu-overlay effects applied ` +
-                `glsl=ascii-fill-edge-coherent-10 style=${style.name} ` +
+                `glsl=${this._getShaderLabel()} style=${style.name} ` +
+                `luminance-mode=${this._luminanceMode.name} ` +
                 `cell-size=${preset.cellSize} grid=${cols}x${rows}`
             );
         } catch (error) {
@@ -1358,12 +1438,13 @@ export default class AsciiOverlayExtension extends Extension {
 
     _luminanceToGlyph(luminance) {
         const adjusted = this._adjustLuminance(luminance);
+        const ramp = ASCII_RAMPS[this._luminanceMode?.name] ?? ASCII_RAMPS.classic10;
         const glyphIndex = Math.min(
-            ASCII_RAMP.length - 1,
-            Math.floor(adjusted * ASCII_RAMP.length)
+            ramp.length - 1,
+            Math.floor(adjusted * ramp.length)
         );
 
-        return ASCII_RAMP[glyphIndex];
+        return ramp[glyphIndex];
     }
 
     _drawCellGuides(cr, width, height, cellSize, amberIntensity) {

@@ -22,6 +22,12 @@ Enable the extension:
 scripts/asciion.sh
 ```
 
+Enable the same extension with the experimental 20-bucket live luminance mode:
+
+```sh
+scripts/asciion20.sh
+```
+
 Disable the extension:
 
 ```sh
@@ -79,7 +85,7 @@ Analyzer output includes a terminal-sized preview and a full-frame character his
  .-,'`:;coOP0Q&8%B@#
 ```
 
-The default overlay toggle shortcut is `Ctrl+Alt+A`. The current visual prototype is a fullscreen GPU-side stage-content overlay: GNOME Shell captures the desktop stage into `Clutter_TextureContent`, paints it as a full-screen actor, and applies a GLSL 10-level ASCII fill pass with a coherence-gated luminance edge pass on the GPU. The pass samples one color per active grid cell, quantizes luminance into the ` .:coPO?@#` ramp, draws procedural glyph masks, and replaces coherent strong-gradient cells with horizontal, vertical, slash, or backslash contour strokes. The live shader approximates the offline DoG/coherence edge path with local contrast gating to keep fullscreen cost low.
+The default overlay toggle shortcut is `Ctrl+Alt+A`. The current visual prototype is a fullscreen GPU-side stage-content overlay: GNOME Shell captures the desktop stage into `Clutter_TextureContent`, paints it as a full-screen actor, and applies a GLSL ASCII fill pass with a coherence-gated luminance edge pass on the GPU. `scripts/asciion.sh` launches the standard 10-bucket mode; `scripts/asciion20.sh` launches an experimental 20-bucket luminance mode using the same procedural glyph masks. The pass samples one color per active grid cell, quantizes luminance, draws procedural glyph masks, and replaces coherent strong-gradient cells with horizontal, vertical, slash, or backslash contour strokes. The live shader approximates the offline DoG/coherence edge path with local contrast gating to keep fullscreen cost low.
 
 Cycle prototype grid presets while the overlay is active:
 
@@ -95,7 +101,7 @@ Cycle live color/filter styles while the overlay is active:
 Ctrl+Alt+Apostrophe
 ```
 
-The style cycle currently includes `classic-amber`, `muted-crt`, `hybrid-edge-tint`, `invert`, and `cyberpunk`. `classic-amber` is the baseline style that restores the original amber shadow/ink look. All styles use the same classic-style glyph mask behavior, then swap the palette/filter. The `1px` grid uses the lightest high-resolution render path, `2px` keeps more ASCII mask strength, and larger ASCII cells (`4px`, `5px`, `8px`, and `10px`) use a stronger but still softened glyph mask.
+The style cycle currently includes `classic-amber`, `dark-amber`, `muted-crt`, `hybrid-edge-tint`, `invert`, and `cyberpunk`. `classic-amber` is the baseline style that restores the original amber shadow/ink look; `dark-amber` uses a deeper low-glow amber palette for darker rooms or lower eye strain. All styles use the same classic-style glyph mask behavior, then swap the palette/filter. The `1px` grid uses the lightest high-resolution render path, `2px` keeps more ASCII mask strength, and larger ASCII cells (`4px`, `5px`, `8px`, and `10px`) use a stronger but still softened glyph mask.
 
 Run the temporary internal capture probe:
 
